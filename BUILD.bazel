@@ -93,5 +93,5 @@ filegroup(
     srcs = [
         ":dist_tar",
         ":dist_zip",
-    ]
+    ],
 )
