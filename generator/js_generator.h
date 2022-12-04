@@ -251,6 +251,8 @@ class Generator : public CodeGenerator {
   // Generate definition for one class.
   void GenerateClass(const GeneratorOptions& options, io::Printer* printer,
                      const Descriptor* desc) const;
+  void GenerateClassEs6(const GeneratorOptions& options, io::Printer* printer,
+                     const Descriptor* desc) const;
   void GenerateClassConstructor(const GeneratorOptions& options,
                                 io::Printer* printer,
                                 const Descriptor* desc) const;
@@ -324,6 +326,13 @@ class Generator : public CodeGenerator {
   void GenerateRepeatedMessageHelperMethods(const GeneratorOptions& options,
                                             io::Printer* printer,
                                             const FieldDescriptor* field) const;
+// Prints the beginning/end of a method of some class.
+void GenerateMethodStart(const GeneratorOptions& options,
+                         io::Printer* printer,
+                         const char * classSymbol,
+                         const char * methodName) const;
+void GenerateMethodEnd(const GeneratorOptions& options,
+                        io::Printer* printer) const;
 };
 
 }  // namespace js
