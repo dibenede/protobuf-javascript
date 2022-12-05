@@ -153,6 +153,15 @@ std::string ModuleAlias(absl::string_view filename) {
 // file descriptor's package.
 std::string GetNamespace(const GeneratorOptions& options,
                          const FileDescriptor* file) {
+  if (options.import_style == GeneratorOptions::kImportEs6) {
+    std::string dotSeparated = "proto." + file->package();
+    // Use $ because it's not valid in proto package names
+    // (https://developers.google.com/protocol-buffers/docs/reference/proto3-spec#identifiers).
+    // If we used _, "foo.a_b" would be equivalent to "foo.a.b".
+    ReplaceCharacters(&dotSeparated, ".", '$');
+    return dotSeparated;
+  }
+
   if (!options.namespace_prefix.empty()) {
     return options.namespace_prefix;
   } else if (!file->package().empty()) {
@@ -2906,14 +2915,7 @@ const char * methodEndBrace = WantEs6(options) ? "}" : "};";
                                         /* force_present = */ false,
                                         /* singular_if_not_packed = */ false));
 
-<<<<<<< HEAD
     if (!field->is_repeated() && !field->is_map() && !field->has_presence()) {
-=======
-    if (field->file()->syntax() == FileDescriptor::SYNTAX_PROTO3 &&
-        !field->is_repeated() && !field->is_map() &&
-        !HasFieldPresence(options, field)) {
-
->>>>>>> 611d03d (Further WIP towards ES6-style code generation.)
       // Proto3 non-repeated and non-map fields without presence use the
       // setProto3*Field function.
       GenerateMethodStart(options, printer, classSymbol.c_str(),
@@ -3865,10 +3867,13 @@ void Generator::GenerateFile(const GeneratorOptions& options,
 
   // Generate "require" statements.
   if (options.import_style == GeneratorOptions::kImportEs6) {
+    printer->Print("import jspb from \"google-protobuf\";\n");
+
     for (int i = 0; i < file->dependency_count(); i++) {
       const std::string name = std::string(file->dependency(i)->name());
       printer->Print(
-          "// TODO: import {used types here} from \"$file$\";\n",
+          "import * as $alias$ from \"$file$\";\n",
+          "alias", ModuleAlias(name),
           "file", GetRootPath(std::string(file->name()), name) + GetJSFilename(options, name));
     }
 
