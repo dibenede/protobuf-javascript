@@ -11,3 +11,7 @@ bazel-*
 /google-protobuf-*.tgz
 /conformance/protos/*.js
 /conformance/package-lock.json
+/external
+/bazel-*
+/.cache/
+
