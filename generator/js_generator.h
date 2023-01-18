@@ -446,6 +446,9 @@ void GenerateMethodEnd(const GeneratorOptions& options,
   const std::string MethodStart(const GeneratorOptions& options,
                                 const char * classSymbol,
                                 const char * methodName) const;
+  const std::string MethodStartStatic(const GeneratorOptions& options,
+                                      const char * classSymbol,
+                                      const char * methodName) const;
 
   const std::string StaticMemberAssignmentLhs(
     const GeneratorOptions& options,
