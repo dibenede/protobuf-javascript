@@ -2010,6 +2010,14 @@ void Generator::GenerateClass(const GeneratorOptions& options,
     // objects.
     GenerateClassDeserializeBinary(options, type_names, printer, desc);
     GenerateClassSerializeBinary(options, type_names, printer, desc);
+
+    // Emit well-known type methods.
+    for (FileToc* toc = well_known_types_js; toc->name != NULL; toc++) {
+      std::string name = std::string("google/protobuf/") + toc->name;
+      if (name == StripProto(desc->file()->name()) + ".js") {
+        printer->Print(toc->data);
+      }
+    }
   }
 
   // Recurse on nested types. These must come *before* the extension-field
@@ -2666,13 +2674,19 @@ void Generator::GenerateClassFields(const GeneratorOptions& options,
   }
 }
 
-void GenerateBytesWrapper(const GeneratorOptions& options, io::Printer* printer,
-                          const FieldDescriptor* field, BytesMode bytes_mode) {
+void Generator::GenerateBytesWrapper(const GeneratorOptions& options, io::Printer* printer,
+                          const FieldDescriptor* field, BytesMode bytes_mode) const {
   std::string type =
       JSFieldTypeAnnotation(options, field,
                             /* is_setter_argument = */ false,
                             /* force_present = */ false,
                             /* singular_if_not_packed = */ false, bytes_mode);
+  const std::string classSymbol = GetMessagePath(options, field->containing_type());
+  const std::string methodStart = MethodStart(
+    options, classSymbol.c_str(),
+    (std::string("get") + JSGetterName(options, field, bytes_mode)).c_str());
+  const char * methodEnd = options.WantEs6() ? "}" : "};";
+
   printer->Print(
       "/**\n"
       " * $fielddef$\n"
@@ -2680,19 +2694,22 @@ void GenerateBytesWrapper(const GeneratorOptions& options, io::Printer* printer,
       " * This is a type-conversion wrapper around `get$defname$()`\n"
       " * @return {$type$}\n"
       " */\n"
-      "$class$.prototype.get$name$ = function() {\n"
+      "$methodstart$() {\n"
       "  return /** @type {$type$} */ (jspb.Message.bytes$list$As$suffix$(\n"
       "      this.get$defname$()));\n"
-      "};\n"
+      "$methodend$\n"
       "\n"
       "\n",
-      "fielddef", FieldDefinition(options, field), "comment",
-      FieldComments(field, bytes_mode), "type", type, "class",
-      GetMessagePath(options, field->containing_type()), "name",
-      JSGetterName(options, field, bytes_mode), "list",
-      field->is_repeated() ? "List" : "", "suffix",
-      JSByteGetterSuffix(bytes_mode), "defname",
-      JSGetterName(options, field, BYTES_DEFAULT));
+      "fielddef", FieldDefinition(options, field),
+      "comment", FieldComments(field, bytes_mode),
+      "type", type,
+      "methodstart", methodStart,
+      "methodend", methodStart,
+      "class", GetMessagePath(options, field->containing_type()),
+      "name", JSGetterName(options, field, bytes_mode),
+      "list", field->is_repeated() ? "List" : "",
+      "suffix", JSByteGetterSuffix(bytes_mode),
+      "defname", JSGetterName(options, field, BYTES_DEFAULT));
 }
 
 void Generator::GenerateClassField(const GeneratorOptions& options,
@@ -4105,14 +4122,6 @@ void Generator::GenerateFile(const GeneratorOptions& options,
   } else if (options.import_style == GeneratorOptions::kImportCommonJsStrict) {
     printer->Print("goog.object.extend(exports, proto);\n", "package",
                    GetNamespace(options, file));
-  }
-
-  // Emit well-known type methods.
-  for (FileToc* toc = well_known_types_js; toc->name != NULL; toc++) {
-    std::string name = std::string("google/protobuf/") + toc->name;
-    if (name == StripProto(file->name()) + ".js") {
-      printer->Print(toc->data);
-    }
   }
 }
 
