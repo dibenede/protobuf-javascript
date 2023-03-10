@@ -441,6 +441,7 @@ class Generator : public CodeGenerator {
 
   // Generate addFoo() method for repeated message fields.
   void GenerateRepeatedMessageHelperMethods(const GeneratorOptions& options,
+                                            const TypeNames& type_names,
                                             io::Printer* printer,
                                             const FieldDescriptor* field) const;
 
