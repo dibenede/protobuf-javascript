@@ -41,6 +41,7 @@
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
 #include "absl/strings/str_replace.h"
+#include "absl/strings/str_split.h"
 #include "absl/strings/strip.h"
 
 #include <algorithm>
@@ -78,16 +79,6 @@ const char* kKeyword[] = {
 static const int kNumKeyword = sizeof(kKeyword) / sizeof(char*);
 
 namespace {
-
-// The mode of operation for bytes fields. Historically JSPB always carried
-// bytes as JS {string}, containing base64 content by convention. With binary
-// and proto3 serialization the new convention is to represent it as binary
-// data in Uint8Array. See b/26173701 for background on the migration.
-enum BytesMode {
-  BYTES_DEFAULT,  // Default type for getBytesField to return.
-  BYTES_B64,      // Explicitly coerce to base64 string where needed.
-  BYTES_U8,       // Explicitly coerce to Uint8Array where needed.
-};
 
 bool IsReserved(absl::string_view ident) {
   for (int i = 0; i < kNumKeyword; i++) {
@@ -1159,7 +1150,7 @@ static const char* kRepeatedFieldArrayName = "repeatedFields_";
 std::string RepeatedFieldsArrayName(const GeneratorOptions& options,
                                     const Descriptor* desc) {
   return HasRepeatedFields(options, desc)
-             ? (desc->name() + "." + kRepeatedFieldArrayName)
+             ? absl::StrCat(desc->name(), ".", kRepeatedFieldArrayName)
              : "null";
 }
 
@@ -1177,7 +1168,7 @@ static const char* kOneofGroupArrayName = "oneofGroups_";
 std::string OneofFieldsArrayName(const GeneratorOptions& options,
                                  const Descriptor* desc) {
   return HasOneofFields(desc)
-             ? (desc->name() + "." + kOneofGroupArrayName)
+             ? absl::StrCat(desc->name(), ".", kOneofGroupArrayName)
              : "null";
 }
 
@@ -1250,7 +1241,7 @@ std::string JSExtensionsObjectName(const GeneratorOptions& options,
                                    const FileDescriptor* from_file,
                                    const Descriptor* desc) {
   if (options.WantEs6()) {
-    return TypeNames::JsName(desc->name()) + ".extensions";
+    return TypeNames::JsName(std::string(desc->name())) + ".extensions";
   } else if (desc->full_name() == "google.protobuf.bridge.MessageSet") {
     // TODO(haberman): fix this for the kImportCommonJs case.
     return "jspb.Message.messageSetExtensions";
@@ -2054,7 +2045,7 @@ void Generator::GenerateClassEs6(const GeneratorOptions& options,
 
 
   std::string prefix = (desc->containing_type() == nullptr) ?
-    "export " : ("static " + desc->name() + " = ");
+    "export " : absl::StrCat("static ", desc->name(), " = ");
 
   printer->Print("\n");
   printer->Print(
@@ -2320,7 +2311,7 @@ void Generator::GenerateClassToObject(const GeneratorOptions& options,
 
   const char * if_guard_start = options.WantEs6() ? "" : "if (jspb.Message.GENERATE_TO_OBJECT) {\n";
   const char * if_guard_end = options.WantEs6() ? "" : "}\n";
-  const std::string classSymbol = options.WantEs6() ? desc->name() : GetMessagePath(options, desc);
+  const std::string classSymbol = options.WantEs6() ? std::string(desc->name()) : GetMessagePath(options, desc);
 
   printer->Print(
       "\n"
@@ -3137,7 +3128,7 @@ void Generator::GenerateRepeatedPrimitiveHelperMethods(
   // clang-format off
   printer->Print(
       "/**\n"
-      " * Adds a value to the repeated field $field_name$ \n"
+      " * Adds a value to the repeated field $addername$ \n"
       " *\n"
       " * @param {$optionaltype$} value\n"
       " * @param {number=} opt_index\n"
@@ -3186,7 +3177,7 @@ void Generator::GenerateRepeatedMessageHelperMethods(
 
   printer->Print(
       "/**\n"
-      " * Adds a value to the repeated field $field_name$ \n"
+      " * Adds a value to the repeated field fieldName \n"
       " *\n"
       " * @param {!$optionaltype$=} opt_value\n"
       " * @param {number=} opt_index\n"
@@ -3195,7 +3186,7 @@ void Generator::GenerateRepeatedMessageHelperMethods(
       "$methodstart$(opt_value, opt_index) {\n"
       "  return jspb.Message.addTo$repeatedtag$WrapperField(",
       "optionaltype", JSTypeName(options, field, BYTES_DEFAULT),
-      "field_name", field->name(),
+      "fieldName", field->name(),
       "class", classSymbol,
       "methodstart", adderMethodStart,
       "addername", adderName,
@@ -3265,7 +3256,7 @@ void Generator::GenerateClassDeserializeBinary(const GeneratorOptions& options,
   // TODO(cfallin): Handle lazy decoding when requested by field option and/or
   // by default for 'bytes' fields and packed repeated fields.
 
-  const std::string classSymbol = desc->name();
+  const absl::string_view classSymbol = desc->name();
 
   printer->Print(
       "/**\n"
@@ -3279,7 +3270,7 @@ void Generator::GenerateClassDeserializeBinary(const GeneratorOptions& options,
       "  var reader = new jspb.BinaryReader(bytes);\n"
       "  var msg = new $class$;\n"
       "  return $class$.deserializeBinaryFromReader(msg, reader);\n",
-      "methodstart", this->MethodStartStatic(options, classSymbol.c_str(), "deserializeBinary"),
+      "methodstart", this->MethodStartStatic(options, classSymbol.data(), "deserializeBinary"),
       "class", classSymbol);
 
   GenerateMethodEnd(options, printer);
@@ -3304,7 +3295,7 @@ printer->Print(
       "    }\n"
       "    var field = reader.getFieldNumber();\n"
       "    switch (field) {\n",
-      "methodstart", MethodStartStatic(options, classSymbol.c_str(), "deserializeBinaryFromReader"));
+      "methodstart", MethodStartStatic(options, classSymbol.data(), "deserializeBinaryFromReader"));
 
   for (int i = 0; i < desc->field_count(); i++) {
     if (!IgnoreField(desc->field(i))) {
@@ -3432,7 +3423,7 @@ void Generator::GenerateClassSerializeBinary(const GeneratorOptions& options,
                                              io::Printer* printer,
                                              const Descriptor* desc) const {
 
-  const std::string classSymbol = desc->name();
+  const absl::string_view classSymbol = desc->name();
 
   printer->Print(
       "/**\n"
@@ -3444,7 +3435,7 @@ void Generator::GenerateClassSerializeBinary(const GeneratorOptions& options,
       "  var writer = new jspb.BinaryWriter();\n"
       "  this.constructor.serializeBinaryToWriter(this, writer);\n"
       "  return writer.getResultBuffer();\n",
-      "methodstart", MethodStart(options, classSymbol.c_str(), "serializeBinary"),
+      "methodstart", MethodStart(options, classSymbol.data(), "serializeBinary"),
       "class", classSymbol);
 
   GenerateMethodEnd(options, printer);
@@ -3461,7 +3452,7 @@ void Generator::GenerateClassSerializeBinary(const GeneratorOptions& options,
       " */\n"
       "$methodstart$(message, writer) {\n"
       "  var f = undefined;\n",
-      "methodstart", MethodStartStatic(options, classSymbol.c_str(), "serializeBinaryToWriter"),
+      "methodstart", MethodStartStatic(options, classSymbol.data(), "serializeBinaryToWriter"),
       "class", classSymbol);
 
 for (int i = 0; i < desc->field_count(); i++) {
@@ -3640,9 +3631,9 @@ void Generator::GenerateEnum(const GeneratorOptions& options,
   // TODO(reddaly): If the enum is defined at top-level, we need
   // 'const <EnumName> = ' instead of '<EnumType> = '
   const std::string enumNameForDefinition = options.WantEs6() ? (
-    enumNamePrefix + enumdesc->name()
+    absl::StrCat(enumNamePrefix, enumdesc->name())
   ) : (
-    GetEnumPathPrefix(options, enumdesc) + enumdesc->name()
+    absl::StrCat(GetEnumPathPrefix(options, enumdesc), enumdesc->name())
   );
   printer->Print(
       "/**\n"
@@ -3695,7 +3686,7 @@ void Generator::GenerateExtension(const GeneratorOptions& options,
       " * @type {!jspb.ExtensionFieldInfo<$extensionType$>}\n"
       " */\n"
       "$class$.$name$ = new jspb.ExtensionFieldInfo(\n",
-      "class", extension_scope_name, "name", extension_object_field_name, "extensionType", 
+      "class", extension_scope_name, "name", extension_object_field_name, "extensionType",
       JSFieldTypeAnnotation(options, field,
                             /* is_setter_argument = */ false,
                             /* force_present = */ true,
@@ -3876,7 +3867,7 @@ void Generator::GenerateFileAndDeps(
     const FileDescriptor* root, std::set<const FileDescriptor*>* all_files,
     std::set<const FileDescriptor*>* generated) const {
   // ES6 must use kOneOutputFilePerInputFile.
-  GOOGLE_CHECK_NE(GeneratorOptions::kOneOutputFilePerInputFile,
+  ABSL_CHECK_NE(GeneratorOptions::kOneOutputFilePerInputFile,
                   options.output_mode());
   TypeNames type_names = TypeNames::NonEs6TypeNames(options);
 
@@ -3994,12 +3985,11 @@ TypeNames TypeNames::Es6TypeNames(
   ReservedForLocalIdentifiers(codegen_file, reserved_aliases);
   //RegisterTypesDefinedInGeneratedFile(codegen_file, full_name_to_alias);
 
-  auto pick_name = [&](const std::string full_name, const std::string ideal_name) -> void {
-    std::string base_candidate = ideal_name;
+  auto pick_name = [&](absl::string_view full_name, absl::string_view ideal_name) -> void {
+    std::string base_candidate = std::string(ideal_name);
     for (int i = -1; i < 10000; i++) {
       if (i == 0) {
-        base_candidate = full_name;
-        ReplaceCharacters(&base_candidate, ".", '_');
+        base_candidate = absl::StrReplaceAll(full_name, {{".", "_"}});
       }
       std::string candidate = base_candidate;
       if (i > 0) {
@@ -4076,36 +4066,36 @@ std::string TypeNames::JsExpression(const google::protobuf::EnumDescriptor& desc
 }
 
 std::string TypeNames::SubmessageTypeRef(const FieldDescriptor* field) const {
-  GOOGLE_CHECK(field->cpp_type() == FieldDescriptor::CPPTYPE_MESSAGE);
-  GOOGLE_CHECK(this->codegen_file == nullptr ||
+  ABSL_CHECK(field->cpp_type() == FieldDescriptor::CPPTYPE_MESSAGE);
+  ABSL_CHECK(this->codegen_file == nullptr ||
                this->codegen_file == field->file());
-  GOOGLE_CHECK_NOTNULL(field->message_type());
+  ABSL_CHECK(field->message_type() != nullptr);
   return JsExpression(*field->message_type());
 }
 
-std::string TypeNames::JsExpression(const std::string& full_name) const {
-  GOOGLE_CHECK_OK(this->options.WantEs6());
+std::string TypeNames::JsExpression(absl::string_view full_name) const {
+  ABSL_CHECK(this->options.WantEs6());
 
-  auto iter = this->map_.find(full_name);
+  auto iter = this->map_.find(std::string(full_name));
   if (iter != this->map_.end()) {
     return iter->second;
   }
   // See if the parent full_name is available. If it is, use it as the prefix.
-  auto parts = google::protobuf::Split(full_name, ".", false);
+  const std::vector<std::string> parts = absl::StrSplit(full_name, ".");
   if (parts.size() > 1) {
     std::vector<std::string> parent_parts = {parts.begin(), parts.end() - 1};
-    auto parent_path = google::protobuf::JoinStrings(
+    auto parent_path = absl::StrJoin(
       parent_parts,
       ".");
-    return this->JsExpression(parent_path) + "." + parts[parts.size() - 1];
+    return absl::StrCat(this->JsExpression(parent_path), ".", parts[parts.size() - 1]);
   }
-  return std::string("INVALID TYPE NAME ") + full_name;
+  return absl::StrCat("INVALID TYPE NAME ", full_name);
 }
 
-std::string TypeNames::JsName(const std::string& full_name) {
+std::string TypeNames::JsName(absl::string_view full_name) {
   // TODO(reddaly): There should probably be some logic to rename messages that
   // conflict with reserved names, right?
-  auto parts = google::protobuf::Split(full_name, ".", false);
+  const std::vector<std::string> parts = absl::StrSplit(full_name, ".");
   return parts[parts.size()-1];
 }
 

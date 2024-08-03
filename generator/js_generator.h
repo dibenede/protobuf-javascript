@@ -170,7 +170,7 @@ public:
    * type descriptor. If the symbol is not directly exported by the
    * ES6 module, the empty string should be returned.
    */
-  static std::string JsName(const std::string& full_name);
+  static std::string JsName(std::string_view full_name);
 
   /**
    * Returns the JavaScript expression for referring to the passed message type.
@@ -220,7 +220,7 @@ private:
    * or Message with the provided full name (as obtained from the type
    * descriptor).
    */
-  std::string JsExpression(const std::string& full_name) const;
+  std::string JsExpression(absl::string_view full_name) const;
 };
 
 // CodeGenerator implementation which generates a JavaScript source file and
