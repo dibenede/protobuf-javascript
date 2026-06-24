@@ -101,7 +101,13 @@ struct GeneratorOptions {
 
   // Returns the file name extension to use for generated code.
   std::string GetFileNameExtension() const {
-    return import_style == kImportClosure ? extension : "_pb.js";
+    if (import_style == kImportClosure) {
+      return extension;
+    } else if (import_style == kImportEs6) {
+      return "_pb.mjs";
+    } else {
+      return "_pb.js";
+    }
   }
 
   enum OutputMode {
@@ -162,7 +168,7 @@ public:
    * code in non-es6-mode. Use dot-delmited type names and
    * goog.provide/goog.requires.
   */
-  static TypeNames NonEs6TypeNames(const GeneratorOptions& options);
+  static TypeNames NonEs6TypeNames(const GeneratorOptions& options, const FileDescriptor* codegen_file = nullptr);
 
   /**
    * Returns the JavaScript expression that is exported by the ES6 module
@@ -392,6 +398,10 @@ class Generator : public CodeGenerator {
                                  const TypeNames& type_names,
                                  io::Printer* printer,
                                  const Descriptor* desc) const;
+  void GenerateClassRegistrationRecursive(const GeneratorOptions& options,
+                                          const TypeNames& type_names,
+                                          io::Printer* printer,
+                                          const Descriptor* desc) const;
   void GenerateClassFields(const GeneratorOptions& options,
                            const TypeNames& type_names,
                            io::Printer* printer, const Descriptor* desc) const;

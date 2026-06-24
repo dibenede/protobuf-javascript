@@ -94,9 +94,7 @@ goog.require('proto.jspb.test.Complex');
 goog.require('proto.jspb.test.DefaultValues');
 goog.require('proto.jspb.test.Empty');
 goog.require('proto.jspb.test.EnumContainer');
-goog.require('proto.jspb.test.floatingMsgField');
 goog.require('proto.jspb.test.FloatingPointFields');
-goog.require('proto.jspb.test.floatingStrField');
 goog.require('proto.jspb.test.HasExtensions');
 goog.require('proto.jspb.test.IndirectExtension');
 goog.require('proto.jspb.test.IsExtension');
@@ -105,6 +103,7 @@ goog.require('proto.jspb.test.OuterEnum');
 goog.require('proto.jspb.test.OuterMessage.Complex');
 goog.require('proto.jspb.test.Simple1');
 goog.require('proto.jspb.test.Simple2');
+goog.require('proto.jspb.test.simple1');
 goog.require('proto.jspb.test.SpecialCases');
 goog.require('proto.jspb.test.TestClone');
 goog.require('proto.jspb.test.TestCloneExtension');
@@ -119,12 +118,13 @@ goog.require('proto.jspb.test.TestReservedNamesExtension');
 // CommonJS-LoadFromFile: protos/test2_pb proto.jspb.test
 goog.require('proto.jspb.test.ExtensionMessage');
 goog.require('proto.jspb.test.TestExtensionsMessage');
+goog.require('proto.jspb.test.floatingMsgField');
+goog.require('proto.jspb.test.floatingStrField');
 
 goog.require('proto.jspb.test.TestAllowAliasEnum');
 // CommonJS-LoadFromFile: protos/testlargenumbers_pb proto.jspb.test
 goog.require('proto.jspb.test.MessageWithLargeFieldNumbers');
 
-goog.require('proto.jspb.test.simple1');
 
 describe('Message test suite', () => {
   const stubs = new goog.testing.PropertyReplacer();

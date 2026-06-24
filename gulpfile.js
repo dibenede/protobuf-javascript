@@ -158,6 +158,11 @@ function genproto_wellknowntypes(cb) {
     make_exec_logging_callback(cb));
 }
 
+function genproto_wellknowntypes_es6(cb) {
+  exec(protoc + ' --js_out=import_style=es6,binary:. -I ' + protocInc + ' ' + wellKnownTypes.join(' '),
+    make_exec_logging_callback(cb));
+}
+
 function genproto_group3_commonjs_strict(cb) {
   exec('mkdir -p commonjs_out && ' + protoc + ' --js_out=import_style=commonjs_strict,binary:commonjs_out -I ' + protocInc + ' -I commonjs -I . ' + group3Protos.join(' '),
     make_exec_logging_callback(cb));
@@ -246,9 +251,67 @@ function test_commonjs(cb) {
 }
 
 function remove_gen_files(cb) {
-  exec('rm -rf commonjs_out google-protobuf.js deps.js google-protobuf-*.tgz conformance/protos/*.js',
+  exec('rm -rf commonjs_out es6_out google-protobuf.js deps.js google-protobuf-*.tgz conformance/protos/*.js',
        make_exec_logging_callback(cb));
 }
+
+function genproto_well_known_types_es6(cb) {
+  exec('mkdir -p es6_out && ' + protoc + ' --js_out=import_style=es6,binary:es6_out -I ' + protocInc + ' ' + wellKnownTypes.join(' '),
+    make_exec_logging_callback(cb));
+}
+
+function genproto_group1_es6(cb) {
+  exec('mkdir -p es6_out && ' + protoc + ' --js_out=import_style=es6,binary:es6_out -I ' + protocInc + ' -I commonjs -I . ' + group1Protos.join(' '),
+    make_exec_logging_callback(cb));
+}
+
+function genproto_group2_es6(cb) {
+  exec(
+    'mkdir -p es6_out && ' + protoc +
+    ' --experimental_allow_proto3_optional --js_out=import_style=es6,binary:es6_out -I ' + protocInc + ' -I commonjs -I . ' +
+    group2Protos.join(' '),
+    make_exec_logging_callback(cb));
+}
+
+function genproto_es6_wellknowntypes(cb) {
+  exec('mkdir -p es6_out/node_modules/google-protobuf && ' + protoc + ' --js_out=import_style=es6,binary:es6_out/node_modules/google-protobuf -I ' + protocInc + ' ' + wellKnownTypes.join(' '),
+    make_exec_logging_callback(cb));
+}
+
+function genproto_group3_es6_strict(cb) {
+  exec('mkdir -p es6_out && ' + protoc + ' --js_out=import_style=es6,binary:es6_out -I ' + protocInc + ' -I commonjs -I . ' + group3Protos.join(' '),
+    make_exec_logging_callback(cb));
+}
+
+function es6_out(cb) {
+  let cmd =
+    'mkdir -p es6_out/binary && mkdir -p es6_out/node_modules/google-protobuf && mkdir -p es6_out/node_modules/testdeps_commonjs && mkdir -p es6_out/helpers && ';
+  function addTestFile(file) {
+    cmd += 'node es6/rewrite_tests_for_es6.js < ' + file +
+      ' > es6_out/' + file + '&& ';
+  }
+
+  glob.sync('*_test.js').forEach(addTestFile);
+  glob.sync('binary/*_test.js').forEach(addTestFile);
+
+  exec(
+    cmd + 'echo \'{"spec_dir": "", "spec_files": ["*_test.js", "binary/*_test.js"], "helpers": ["helpers/fix_self.js"], "env": {"stopSpecOnExpectationFailure": true, "stopOnSpecFailure": true, "random": false}}\' > es6_out/jasmine.json && ' +
+    'cp google-protobuf.js es6_out/node_modules/google-protobuf/index.js && ' +
+    'echo \'{"main": "index.js"}\' > es6_out/node_modules/google-protobuf/package.json && ' +
+    'echo "console.log(\'FIX SELF RUNNING\'); globalThis.self = globalThis;" > es6_out/helpers/fix_self.js && ' +
+    'cp commonjs_out/test_node_modules/testdeps_commonjs.js es6_out/node_modules/testdeps_commonjs/index.js && ' +
+    'echo \'{"main": "index.js"}\' > es6_out/node_modules/testdeps_commonjs/package.json && ' +
+    'echo \'{"type": "module"}\' > es6_out/package.json && ' +
+    'cp es6/strict_test.js es6_out/strict_test.js &&' +
+    'cp es6/import_test.js es6_out/import_test.js',
+    make_exec_logging_callback(cb));
+}
+
+function test_es6(cb) {
+  exec('cd es6_out && JASMINE_CONFIG_PATH=jasmine.json ../node_modules/.bin/jasmine --random=false',
+    make_exec_logging_callback(cb));
+}
+
 
 exports.build_protoc_plugin = function (cb) {
   exec('bazel build generator:protoc-gen-js',
@@ -257,6 +320,7 @@ exports.build_protoc_plugin = function (cb) {
 
 const dist = series(exports.build_protoc_plugin,
   genproto_wellknowntypes,
+  genproto_wellknowntypes_es6,
   gen_google_protobuf_js);
 
 exports.dist = series(enableAdvancedOptimizations, dist);
@@ -294,6 +358,23 @@ exports.test_commonjs = series(enableSimpleOptimizations,
   test_commonjs_series);
 exports.test_commonjs_opt = series(enableAdvancedOptimizations,
   test_commonjs_series);
+
+exports.build_es6 = series(
+  dist,
+  genproto_well_known_types_es6,
+  genproto_group1_es6, genproto_group2_es6,
+  genproto_es6_wellknowntypes,
+  commonjs_testdeps, genproto_group3_es6_strict,
+  es6_out);
+
+const test_es6_series = series(
+  exports.build_es6,
+  test_es6);
+
+exports.test_es6 = series(enableSimpleOptimizations,
+  test_es6_series);
+exports.test_es6_opt = series(enableAdvancedOptimizations,
+  test_es6_series);
 
 const test_series = series(test_closure_series,
   test_commonjs_series);

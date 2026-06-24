@@ -48,6 +48,8 @@ if (typeof exports === 'object') {
     'array': goog.array,
     'object': goog.object,
     'requireType': goog.requireType,
+    'typeOf': goog.typeOf,
+    'inherits': goog.inherits,
   };
 
   exports['jspb'] = {
