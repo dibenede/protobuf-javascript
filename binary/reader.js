@@ -46,6 +46,21 @@ asserts.assert(
 const /** boolean */ UTF8_PARSING_ERRORS_ARE_FATAL = ENFORCE_UTF8 === 'ALWAYS';
 
 /**
+ * @define {number} Maximum allowed recursion depth for group and submessage
+ * decoding.
+ */
+// 100 is the normal protobuf limit.
+const MAX_RECURSION_DEPTH =
+    goog.define('jspb.binary.MAX_RECURSION_DEPTH', (2 * 100));
+
+/**
+ * Recursion depth counter for groups and submessages during synchronous binary deserialization.
+ * @type {number}
+ */
+let recursionDepth = 0;
+
+
+/**
  * Describes options for BinaryReaders.
  *
  * @record
@@ -180,6 +195,7 @@ class BinaryReader {
      * @private {!BinaryConstants.WireType}
      */
     this.nextWireType_ = BinaryConstants.WireType.INVALID;
+
     this.setOptions(options);
   }
 
@@ -509,24 +525,56 @@ class BinaryReader {
 
 
   /**
+   * Increments the recursion depth counter and checks against the limit.
+   * Throws a SyntaxError if the recursion depth limit is exceeded.
+   */
+  pushRecursion() {
+    if (recursionDepth >= MAX_RECURSION_DEPTH) {
+      throw errors.maxRecursionDepthExceededError();
+    }
+    recursionDepth++;
+  }
+
+
+  /**
+   * Decrements the recursion depth counter.
+   */
+  popRecursion() {
+    if (recursionDepth > 0) {
+      recursionDepth--;
+    }
+  }
+
+
+  /**
    * Skips over the next group field in the binary stream.
    * @private
    */
   skipGroup() {
     const previousField = this.nextField_;
-    do {
-      if (!this.nextField()) {
-        throw errors.unmatchedStartGroupEofError();
-      }
-      if (this.nextWireType_ == BinaryConstants.WireType.END_GROUP) {
-        // Group end: check that it matches top-of-stack.
-        if (this.nextField_ != previousField) {
-          throw errors.unmatchedStartGroupError();
+    this.pushRecursion();
+    try {
+      do {
+        if (!this.nextField()) {
+          throw errors.unmatchedStartGroupEofError();
         }
-        return;
+        if (this.nextWireType_ == BinaryConstants.WireType.END_GROUP) {
+          // Group end: check that it matches top-of-stack.
+          if (this.nextField_ != previousField) {
+            throw errors.unmatchedStartGroupError();
+          }
+          return;
+        }
+        this.skipField();
+      } while (true);
+    } catch (err) {
+      if (err instanceof RangeError) {
+        throw errors.maxRecursionDepthExceededError();
       }
-      this.skipField();
-    } while (true);
+      throw err;
+    } finally {
+      this.popRecursion();
+    }
   }
 
 
@@ -535,25 +583,32 @@ class BinaryReader {
    * decoding a message that contain unknown fields.
    */
   skipField() {
-    switch (this.nextWireType_) {
-      case BinaryConstants.WireType.VARINT:
-        this.skipVarintField();
-        break;
-      case BinaryConstants.WireType.FIXED64:
-        this.skipFixed64Field();
-        break;
-      case BinaryConstants.WireType.DELIMITED:
-        this.skipDelimitedField();
-        break;
-      case BinaryConstants.WireType.FIXED32:
-        this.skipFixed32Field();
-        break;
-      case BinaryConstants.WireType.START_GROUP:
-        this.skipGroup();
-        break;
-      default:
-        throw errors.invalidWireTypeError(
-          this.nextWireType_, this.fieldCursor_);
+    try {
+      switch (this.nextWireType_) {
+        case BinaryConstants.WireType.VARINT:
+          this.skipVarintField();
+          break;
+        case BinaryConstants.WireType.FIXED64:
+          this.skipFixed64Field();
+          break;
+        case BinaryConstants.WireType.DELIMITED:
+          this.skipDelimitedField();
+          break;
+        case BinaryConstants.WireType.FIXED32:
+          this.skipFixed32Field();
+          break;
+        case BinaryConstants.WireType.START_GROUP:
+          this.skipGroup();
+          break;
+        default:
+          throw errors.invalidWireTypeError(
+            this.nextWireType_, this.fieldCursor_);
+      }
+    } catch (err) {
+      if (err instanceof RangeError) {
+        throw errors.maxRecursionDepthExceededError();
+      }
+      throw err;
     }
   }
 
@@ -684,7 +739,17 @@ class BinaryReader {
       this.decoder_.setEnd(newEnd);
 
       // Deserialize the embedded message.
-      reader(message, this, contextA, contextB, contextC);
+      this.pushRecursion();
+      try {
+        reader(message, this, contextA, contextB, contextC);
+      } catch (err) {
+        if (err instanceof RangeError) {
+          throw errors.maxRecursionDepthExceededError();
+        }
+        throw err;
+      } finally {
+        this.popRecursion();
+      }
 
       underflowLength = newEnd - this.decoder_.getCursor();
     }
@@ -715,7 +780,17 @@ class BinaryReader {
 
     // Deserialize the message. The deserialization will stop at an END_GROUP
     // tag.
-    reader(message, this);
+    this.pushRecursion();
+    try {
+      reader(message, this);
+    } catch (err) {
+      if (err instanceof RangeError) {
+        throw errors.maxRecursionDepthExceededError();
+      }
+      throw err;
+    } finally {
+      this.popRecursion();
+    }
 
     if (this.nextWireType_ !== BinaryConstants.WireType.END_GROUP) {
       // This case should be impossible assuming we trust all the reader
@@ -757,48 +832,65 @@ class BinaryReader {
     let typeId = 0;
     // The offset to the message payload, or -1 if consumed.
     let messageCursor = 0;
-    while (this.nextField() && !this.isEndGroup()) {
-      // See go/malformed-message-set-parsing If malformed messages repeat the
-      // typeId or message fields, only use the first value of either within
-      // the group.
-      if (this.getTag() === MESSAGE_SET_TYPE_ID_TAG && !typeId) {
-        typeId = this.readUint32();
-        if (messageCursor) {
-          asserts.assert(messageCursor > 0);
-          // Backup the parsing to the message payload.
-          // No need to restore the position, we'll simply reread the type id
-          // again, but skip doing anything because its already been read once.
+    this.pushRecursion();
+    try {
+      while (this.nextField() && !this.isEndGroup()) {
+        try {
+          // See go/malformed-message-set-parsing If malformed messages repeat the
+          // typeId or message fields, only use the first value of either within
+          // the group.
+          if (this.getTag() === MESSAGE_SET_TYPE_ID_TAG && !typeId) {
+            typeId = this.readUint32();
+            if (messageCursor) {
+              asserts.assert(messageCursor > 0);
+              // Backup the parsing to the message payload.
+              // No need to restore the position, we'll simply reread the type id
+              // again, but skip doing anything because its already been read once.
 
-          // Reset these.  Because we are going to modify the cursor we need to
-          // skip the consistency checks in nextField() and pretend like this is
-          // a fresh BinaryReader instance.
-          if (asserts.ENABLE_ASSERTS) {
-            this.nextTag_ = BinaryConstants.INVALID_TAG;
-            this.nextWireType_ = BinaryConstants.WireType.INVALID;
+              // Reset these.  Because we are going to modify the cursor we need to
+              // skip the consistency checks in nextField() and pretend like this is
+              // a fresh BinaryReader instance.
+              if (asserts.ENABLE_ASSERTS) {
+                this.nextTag_ = BinaryConstants.INVALID_TAG;
+                this.nextWireType_ = BinaryConstants.WireType.INVALID;
+              }
+
+              // Reset our cursor to where the message was, and pretend like we had
+              // not seen the message payload yet.
+              this.decoder_.setCursor(messageCursor);
+              messageCursor = 0;
+            }
+          } else if (this.getTag() === MESSAGE_SET_MESSAGE_TAG && !messageCursor) {
+            if (typeId) {
+              messageCursor = -1;
+              this.readMessage(typeId, readerCallback);
+            } else {
+              // Save the cursor to read the message
+              // after we have the type ID.
+              messageCursor = this.getFieldCursor();
+              this.skipDelimitedField();
+            }
+          } else {
+            // Either we have already read the payload or this is not a valid
+            // messageset member. As a practical matter we don't have a place to
+            // store this unknown field and simply skipping is consistent with the
+            // Java and C++ impls
+            this.skipField();
           }
-
-          // Reset our cursor to where the message was, and pretend like we had
-          // not seen the message payload yet.
-          this.decoder_.setCursor(messageCursor);
-          messageCursor = 0;
+        } catch (err) {
+          if (err instanceof RangeError) {
+            throw errors.maxRecursionDepthExceededError();
+          }
+          throw err;
         }
-      } else if (this.getTag() === MESSAGE_SET_MESSAGE_TAG && !messageCursor) {
-        if (typeId) {
-          messageCursor = -1;
-          this.readMessage(typeId, readerCallback);
-        } else {
-          // Save the cursor to read the message
-          // after we have the type ID.
-          messageCursor = this.getFieldCursor();
-          this.skipDelimitedField();
-        }
-      } else {
-        // Either we have already read the payload or this is not a valid
-        // messageset member. As a practical matter we don't have a place to
-        // store this unknown field and simply skipping is consistent with the
-        // Java and C++ impls
-        this.skipField();
       }
+    } catch (err) {
+      if (err instanceof RangeError) {
+        throw errors.maxRecursionDepthExceededError();
+      }
+      throw err;
+    } finally {
+      this.popRecursion();
     }
 
     // If we do not have an end tag, if we did not have a message, or if we
@@ -1545,5 +1637,6 @@ const /** number */ MESSAGE_SET_END_TAG = utils.makeTag(
 exports = {
   BinaryReader,
   BinaryReaderOptions,
+  MAX_RECURSION_DEPTH,
   UTF8_PARSING_ERRORS_ARE_FATAL,
 };

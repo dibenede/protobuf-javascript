@@ -108,6 +108,15 @@ function negativeByteLengthError(
   return new Error(`Tried to read a negative byte length: ${length}`);
 }
 
+/**
+ * Reports that the maximum recursion depth was exceeded.
+ *
+ * @return {!SyntaxError}
+ */
+function maxRecursionDepthExceededError() {
+  return new SyntaxError('Maximum protobuf recursion depth exceeded');
+}
+
 exports = {
   messageLengthMismatchError,
   groupDidNotEndWithEndGroupError,
@@ -115,8 +124,10 @@ exports = {
   invalidVarintError,
   invalidWireTypeError,
   malformedBinaryBytesForMessageSet,
+  maxRecursionDepthExceededError,
   negativeByteLengthError,
   readTooFarError,
   unmatchedStartGroupError,
   unmatchedStartGroupEofError,
 };
+

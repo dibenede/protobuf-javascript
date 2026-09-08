@@ -1117,4 +1117,111 @@ describe('binaryReaderTest', () => {
     expect(() => reader.nextField())
       .toThrowError('Invalid wire type: 6 (at position 0)');
   });
+
+  it('testRecursionLimitExceededThrowsSyntaxError', () => {
+    const writer = new BinaryWriter();
+    function writeNestedGroups(w, d) {
+      if (d <= 0) return;
+      w.writeGroup(1, {}, () => {
+        writeNestedGroups(w, d - 1);
+      });
+    }
+    writeNestedGroups(writer, 201);
+
+    const reader = BinaryReader.alloc(writer.getResultBuffer());
+    expect(reader.nextField()).toBe(true);
+    expect(() => {
+      reader.skipGroup();
+    }).toThrowError(SyntaxError, 'Maximum protobuf recursion depth exceeded');
+    reader.free();
+  });
+
+  it('testRecursionWithinLimitSuccess', () => {
+    const writer = new BinaryWriter();
+    function writeNestedGroups(w, d) {
+      if (d <= 0) return;
+      w.writeGroup(1, {}, () => {
+        writeNestedGroups(w, d - 1);
+      });
+    }
+    writeNestedGroups(writer, 200);
+
+    const reader = BinaryReader.alloc(writer.getResultBuffer());
+    expect(reader.nextField()).toBe(true);
+    expect(() => {
+      reader.skipGroup();
+    }).not.toThrow();
+    reader.free();
+  });
+
+  it('testRecursionSurvivesMalformedLopsidedMessage', () => {
+    function writeNestedGroups(w, d) {
+      if (d <= 0) return;
+      w.writeGroup(1, {}, () => {
+        writeNestedGroups(w, d - 1);
+      });
+    }
+
+    // 1. First reader encounters a truncated (lopsided/malformed) group message that throws.
+    const malformedWriter = new BinaryWriter();
+    malformedWriter.writeGroup(1, {}, (msg, writer) => {
+      writer.writeGroup(2, {}, (msg2, w2) => {
+        w2.writeString(1, 'truncated');
+      });
+    });
+    const malformedBytes = sliceUint8Array(malformedWriter.getResultBuffer(), 0, -2);
+    const malformedReader = BinaryReader.alloc(malformedBytes);
+    expect(malformedReader.nextField()).toBe(true);
+    expect(() => {
+      malformedReader.skipGroup();
+    }).toThrowError();
+    malformedReader.free();
+
+    // 2. Second reader parses exactly 200 nested groups. If the shared recursionDepth counter
+    // was not properly unwound/zeroed after the malformed message above, this will fail.
+    const validWriter = new BinaryWriter();
+    writeNestedGroups(validWriter, 200);
+    const validReader = BinaryReader.alloc(validWriter.getResultBuffer());
+    expect(validReader.nextField()).toBe(true);
+    expect(() => {
+      validReader.skipGroup();
+    }).not.toThrow();
+    validReader.free();
+  });
+
+  it('throws SyntaxError when readMessage encounters RangeError (e.g. stack overflow)', () => {
+    const encoder = new BinaryEncoder();
+    encoder.writeUnsignedVarint32((1 << 3) + BinaryConstants.WireType.DELIMITED);
+    encoder.writeUnsignedVarint32(0); // length 0 message
+    const reader = BinaryReader.alloc(encoder.end());
+    reader.nextField();
+    const dummyMessage = {};
+    expect(() => reader.readMessage(dummyMessage, () => {
+      throw new RangeError('Maximum call stack size exceeded');
+    })).toThrowError(SyntaxError, 'Maximum protobuf recursion depth exceeded');
+  });
+
+  it('throws SyntaxError when nesting depth limit is exceeded in readMessage', () => {
+    const writer = new BinaryWriter();
+    function writeNestedMessages(w, d) {
+      if (d <= 0) return;
+      w.writeMessage(1, {}, () => {
+        writeNestedMessages(w, d - 1);
+      });
+    }
+    writeNestedMessages(writer, 201);
+
+    const reader = BinaryReader.alloc(writer.getResultBuffer());
+    const dummyMessage = {};
+    const recursiveReader = (msg, r) => {
+      while (r.nextField()) {
+        r.readMessage(msg, recursiveReader);
+      }
+    };
+    expect(() => recursiveReader(dummyMessage, reader))
+      .toThrowError(SyntaxError, 'Maximum protobuf recursion depth exceeded');
+    reader.free();
+  });
 });
+
+
