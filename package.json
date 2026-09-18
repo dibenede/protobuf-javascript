@@ -13,7 +13,6 @@
     "README.md"
   ],
   "devDependencies": {
-    "glob": "~7.1.4",
     "google-artifactregistry-auth": "^3.5.0",
     "google-closure-compiler": "20230802.0.0",
     "google-closure-deps": "20230802.0.0",

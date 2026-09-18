@@ -1,6 +1,6 @@
 const { series } = require('gulp');
 const execFile = require('child_process').execFile;
-const glob = require('glob');
+const fs = require('fs');
 
 function exec(command, cb) {
   execFile('sh', ['-c', command], cb);
@@ -215,8 +215,13 @@ function commonjs_out(cb) {
       ' > commonjs_out/' + file + '&& ';
   }
 
-  glob.sync('*_test.js').forEach(addTestFile);
-  glob.sync('binary/*_test.js').forEach(addTestFile);
+  fs.readdirSync('.')
+    .filter((file) => file.endsWith('_test.js'))
+    .forEach(addTestFile);
+  fs.readdirSync('binary')
+    .filter((file) => file.endsWith('_test.js'))
+    .map((file) => `binary/${file}`)
+    .forEach(addTestFile);
 
   exec(
     cmd + 'cp commonjs/jasmine.json commonjs_out/jasmine.json && ' +
